@@ -319,26 +319,26 @@
 
         // モーション状態を判定
         function determineMotionState(variance, recentData) {
-            const STATIC_THRESHOLD = 0.5;  // 静止判定の閾値
-            const SMOOTH_THRESHOLD = 2.0;  // 滑らかな動き判定の閾値
+            const STATIC_THRESHOLD = 0.05;  // 静止判定の閾値（厳しめ）
+            const SMOOTH_THRESHOLD = 0.3;   // 滑らか判定の閾値（変動が少ない）
 
             if (variance < STATIC_THRESHOLD) {
                 return {
                     state: 'static',
                     label: '静止',
-                    description: '手がほとんど動いていません'
+                    description: 'ほとんど動いていません'
                 };
             } else if (variance < SMOOTH_THRESHOLD) {
                 return {
                     state: 'smooth',
                     label: '滑らか',
-                    description: '滑らかに動いています'
+                    description: '変動が少なく滑らかです'
                 };
             } else {
                 return {
                     state: 'shaking',
-                    label: '振動',
-                    description: '激しく動いています'
+                    label: '動いている',
+                    description: '変動が大きいです'
                 };
             }
         }
