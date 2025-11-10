@@ -12,9 +12,11 @@
 
 GitHub Pagesで公開しているので、スマホのブラウザで以下のURLにアクセスしてください：
 
-https://[your-username].github.io/[repository-name]/
+**https://itiyabosi.github.io/motion-detector/**
 
 「センサーを開始」ボタンをタップして、スマホを動かしてみてください。
+
+注意: GitHub Pagesのデプロイには数分かかる場合があります。
 
 ## ローカルで実行
 
