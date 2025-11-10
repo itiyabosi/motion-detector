@@ -215,6 +215,28 @@
         </div>
 
         <div class="card">
+            <h2 style="margin-bottom: 15px;">🔍 微細振動検出</h2>
+            <div class="status-text" id="tremorStatus" style="font-size: 32px; margin-bottom: 10px;">---</div>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-label">検出周波数 (Hz)</div>
+                    <div class="metric-value" id="tremorFrequency">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">振幅 (g)</div>
+                    <div class="metric-value" id="tremorAmplitude">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">信頼度</div>
+                    <div class="metric-value" id="tremorConfidence">--</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                3-12 Hz範囲の周期的な微細振動を検出します
+            </div>
+        </div>
+
+        <div class="card">
             <h2 style="margin-bottom: 15px;">📊 加速度グラフ</h2>
             <div class="chart-container">
                 <canvas id="accelerationChart"></canvas>
@@ -245,6 +267,17 @@
         const MAX_DATA_POINTS = 50;
         const SAMPLING_WINDOW = 20; // 分析に使用するサンプル数
 
+        // 振戦検出用変数
+        let axisDataX = [];
+        let axisDataY = [];
+        let axisDataZ = [];
+        const TREMOR_WINDOW_SIZE = 100; // 2秒分のデータ（50Hzサンプリング想定）
+        const TREMOR_MIN_FREQ = 3;  // 最小周波数 (Hz)
+        const TREMOR_MAX_FREQ = 12; // 最大周波数 (Hz)
+        const TREMOR_THRESHOLD = 0.06; // 振幅閾値 (g)
+        let lastTremorCheck = 0;
+        const TREMOR_CHECK_INTERVAL = 1000; // 1秒ごとにチェック
+
         // DOM要素
         const startBtn = document.getElementById('startBtn');
         const statusText = document.getElementById('statusText');
@@ -255,6 +288,10 @@
         const logContainer = document.getElementById('logContainer');
         const clearLogBtn = document.getElementById('clearLogBtn');
         const errorMessage = document.getElementById('errorMessage');
+        const tremorStatus = document.getElementById('tremorStatus');
+        const tremorFrequency = document.getElementById('tremorFrequency');
+        const tremorAmplitude = document.getElementById('tremorAmplitude');
+        const tremorConfidence = document.getElementById('tremorConfidence');
 
         // Chart.jsの初期化
         function initChart() {
@@ -343,6 +380,108 @@
             }
         }
 
+        // 簡易FFT - 自己相関ベースの周波数検出
+        function detectDominantFrequency(data, sampleRate) {
+            if (data.length < 20) return null;
+
+            // データを正規化（平均を0に）
+            const mean = data.reduce((a, b) => a + b, 0) / data.length;
+            const normalized = data.map(v => v - mean);
+
+            // 自己相関を計算
+            const maxLag = Math.min(data.length / 2, sampleRate / TREMOR_MIN_FREQ);
+            let bestLag = 0;
+            let bestCorrelation = -Infinity;
+
+            for (let lag = Math.floor(sampleRate / TREMOR_MAX_FREQ); lag <= maxLag; lag++) {
+                let correlation = 0;
+                for (let i = 0; i < data.length - lag; i++) {
+                    correlation += normalized[i] * normalized[i + lag];
+                }
+                if (correlation > bestCorrelation) {
+                    bestCorrelation = correlation;
+                    bestLag = lag;
+                }
+            }
+
+            if (bestLag === 0) return null;
+
+            const frequency = sampleRate / bestLag;
+            const amplitude = Math.sqrt(normalized.reduce((sum, v) => sum + v * v, 0) / normalized.length);
+
+            return { frequency, amplitude, correlation: bestCorrelation };
+        }
+
+        // 振戦検出
+        function detectTremor() {
+            const now = Date.now();
+            if (now - lastTremorCheck < TREMOR_CHECK_INTERVAL) return;
+            lastTremorCheck = now;
+
+            if (axisDataX.length < TREMOR_WINDOW_SIZE) {
+                tremorStatus.textContent = '測定中...';
+                tremorStatus.className = 'status-text';
+                return;
+            }
+
+            // 推定サンプリングレート（デバイスによって異なる）
+            const sampleRate = 50; // 仮定: 50Hz
+
+            // 各軸で周波数検出
+            const resultsX = detectDominantFrequency(axisDataX.slice(-TREMOR_WINDOW_SIZE), sampleRate);
+            const resultsY = detectDominantFrequency(axisDataY.slice(-TREMOR_WINDOW_SIZE), sampleRate);
+            const resultsZ = detectDominantFrequency(axisDataZ.slice(-TREMOR_WINDOW_SIZE), sampleRate);
+
+            const results = [resultsX, resultsY, resultsZ].filter(r => r !== null);
+
+            if (results.length === 0) {
+                tremorStatus.textContent = '検出なし';
+                tremorStatus.className = 'status-text status-static';
+                tremorFrequency.textContent = '--';
+                tremorAmplitude.textContent = '--';
+                tremorConfidence.textContent = '--';
+                return;
+            }
+
+            // 最も強い信号を選択
+            const dominant = results.reduce((best, current) =>
+                current.correlation > best.correlation ? current : best
+            );
+
+            const freq = dominant.frequency;
+            const amp = dominant.amplitude;
+
+            // 振戦範囲内かチェック
+            if (freq >= TREMOR_MIN_FREQ && freq <= TREMOR_MAX_FREQ && amp >= TREMOR_THRESHOLD) {
+                tremorStatus.textContent = '検出';
+                tremorStatus.className = 'status-text status-shaking';
+                tremorFrequency.textContent = freq.toFixed(1);
+                tremorAmplitude.textContent = (amp * 9.81).toFixed(3); // m/s² に変換
+
+                // 信頼度計算（周波数の一貫性と振幅から）
+                const freqConfidence = results.filter(r =>
+                    Math.abs(r.frequency - freq) < 1
+                ).length / results.length;
+                tremorConfidence.textContent = Math.round(freqConfidence * 100) + '%';
+
+                if (!window.lastTremorState || window.lastTremorState !== 'detected') {
+                    addLog(`微細振動を検出: ${freq.toFixed(1)} Hz`, 'shaking');
+                    window.lastTremorState = 'detected';
+                }
+            } else {
+                tremorStatus.textContent = '検出なし';
+                tremorStatus.className = 'status-text status-static';
+                tremorFrequency.textContent = freq.toFixed(1) + ' (範囲外)';
+                tremorAmplitude.textContent = (amp * 9.81).toFixed(3);
+                tremorConfidence.textContent = '--';
+
+                if (window.lastTremorState === 'detected') {
+                    addLog('微細振動が停止しました', 'static');
+                    window.lastTremorState = 'none';
+                }
+            }
+        }
+
         // ログに追加
         function addLog(message, state = null) {
             const now = new Date();
@@ -410,6 +549,21 @@
                 return;
             }
 
+            // 各軸のデータを保存（振戦検出用）
+            // 重力成分を除去するために、各軸から平均を引く（簡易版）
+            const gToMs2 = 9.81;
+            axisDataX.push(acc.x / gToMs2);
+            axisDataY.push(acc.y / gToMs2);
+            axisDataZ.push(acc.z / gToMs2);
+
+            // データサイズを制限
+            const maxAxisData = TREMOR_WINDOW_SIZE * 2;
+            if (axisDataX.length > maxAxisData) {
+                axisDataX.shift();
+                axisDataY.shift();
+                axisDataZ.shift();
+            }
+
             const magnitude = calculateMagnitude(acc.x, acc.y, acc.z);
             sampleCount++;
 
@@ -425,6 +579,9 @@
 
             // UI更新
             updateUI(magnitude, variance, motionState);
+
+            // 振戦検出
+            detectTremor();
 
             // 状態が変化したらログに記録
             if (!window.lastMotionState || window.lastMotionState !== motionState.state) {
@@ -474,6 +631,17 @@
             isMonitoring = false;
             startBtn.textContent = 'センサーを開始';
             startBtn.className = 'start-btn';
+
+            // 振戦検出データをクリア
+            axisDataX = [];
+            axisDataY = [];
+            axisDataZ = [];
+            tremorStatus.textContent = '---';
+            tremorStatus.className = 'status-text';
+            tremorFrequency.textContent = '--';
+            tremorAmplitude.textContent = '--';
+            tremorConfidence.textContent = '--';
+
             addLog('センサー監視を停止しました');
         }
 
