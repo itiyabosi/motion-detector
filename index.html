@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>モーション判定アプリ</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .status-display {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .status-text {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .status-static {
+            color: #3498db;
+        }
+
+        .status-smooth {
+            color: #2ecc71;
+        }
+
+        .status-shaking {
+            color: #e74c3c;
+        }
+
+        .status-description {
+            font-size: 18px;
+            color: #666;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .start-btn {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .start-btn:hover {
+            background: #27ae60;
+        }
+
+        .stop-btn {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .stop-btn:hover {
+            background: #c0392b;
+        }
+
+        .start-btn:disabled, .stop-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-time {
+            color: #999;
+            margin-right: 10px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .error-message {
+            background: #ffe6e6;
+            color: #c0392b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .clear-btn {
+            background: #95a5a6;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .clear-btn:hover {
+            background: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 モーション判定アプリ</h1>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="card">
+            <button id="startBtn" class="start-btn">センサーを開始</button>
+        </div>
+
+        <div class="card status-display">
+            <div class="status-text" id="statusText">待機中</div>
+            <div class="status-description" id="statusDescription">
+                開始ボタンを押してください
+            </div>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-label">加速度 (m/s²)</div>
+                    <div class="metric-value" id="accelerationValue">0.0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">変動率</div>
+                    <div class="metric-value" id="varianceValue">0.0</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">サンプル数</div>
+                    <div class="metric-value" id="sampleCount">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom: 15px;">📊 加速度グラフ</h2>
+            <div class="chart-container">
+                <canvas id="accelerationChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>📝 ログ</h2>
+                <button class="clear-btn" id="clearLogBtn">クリア</button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">
+                    <span class="log-time">--:--:--</span>
+                    <span>ログがここに表示されます</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // グローバル変数
+        let isMonitoring = false;
+        let accelerationData = [];
+        let timeLabels = [];
+        let chart = null;
+        let sampleCount = 0;
+        const MAX_DATA_POINTS = 50;
+        const SAMPLING_WINDOW = 20; // 分析に使用するサンプル数
+
+        // DOM要素
+        const startBtn = document.getElementById('startBtn');
+        const statusText = document.getElementById('statusText');
+        const statusDescription = document.getElementById('statusDescription');
+        const accelerationValue = document.getElementById('accelerationValue');
+        const varianceValue = document.getElementById('varianceValue');
+        const sampleCountEl = document.getElementById('sampleCount');
+        const logContainer = document.getElementById('logContainer');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Chart.jsの初期化
+        function initChart() {
+            const ctx = document.getElementById('accelerationChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: '合成加速度 (m/s²)',
+                        data: accelerationData,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        pointRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 0
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '加速度 (m/s²)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時間'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // 加速度の合成値を計算
+        function calculateMagnitude(x, y, z) {
+            return Math.sqrt(x * x + y * y + z * z);
+        }
+
+        // 分散を計算
+        function calculateVariance(data) {
+            if (data.length < 2) return 0;
+            const mean = data.reduce((a, b) => a + b, 0) / data.length;
+            const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+            return variance;
+        }
+
+        // モーション状態を判定
+        function determineMotionState(variance, recentData) {
+            const STATIC_THRESHOLD = 0.5;  // 静止判定の閾値
+            const SMOOTH_THRESHOLD = 2.0;  // 滑らかな動き判定の閾値
+
+            if (variance < STATIC_THRESHOLD) {
+                return {
+                    state: 'static',
+                    label: '静止',
+                    description: '手がほとんど動いていません'
+                };
+            } else if (variance < SMOOTH_THRESHOLD) {
+                return {
+                    state: 'smooth',
+                    label: '滑らか',
+                    description: '滑らかに動いています'
+                };
+            } else {
+                return {
+                    state: 'shaking',
+                    label: '振動',
+                    description: '激しく動いています'
+                };
+            }
+        }
+
+        // ログに追加
+        function addLog(message, state = null) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ja-JP');
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+
+            let stateIcon = '';
+            if (state === 'static') stateIcon = '🔵';
+            else if (state === 'smooth') stateIcon = '🟢';
+            else if (state === 'shaking') stateIcon = '🔴';
+
+            logEntry.innerHTML = `
+                <span class="log-time">${timeStr}</span>
+                <span>${stateIcon} ${message}</span>
+            `;
+
+            if (logContainer.children.length === 1 &&
+                logContainer.children[0].textContent.includes('ログがここに表示されます')) {
+                logContainer.innerHTML = '';
+            }
+
+            logContainer.insertBefore(logEntry, logContainer.firstChild);
+
+            // ログが多くなりすぎないように制限
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        // UIを更新
+        function updateUI(magnitude, variance, motionState) {
+            // 状態表示
+            statusText.textContent = motionState.label;
+            statusText.className = `status-text status-${motionState.state}`;
+            statusDescription.textContent = motionState.description;
+
+            // メトリクス表示
+            accelerationValue.textContent = magnitude.toFixed(2);
+            varianceValue.textContent = variance.toFixed(2);
+            sampleCountEl.textContent = sampleCount;
+
+            // グラフ更新
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ja-JP');
+
+            timeLabels.push(timeStr);
+            accelerationData.push(magnitude);
+
+            // データポイント数を制限
+            if (timeLabels.length > MAX_DATA_POINTS) {
+                timeLabels.shift();
+                accelerationData.shift();
+            }
+
+            chart.update();
+        }
+
+        // 加速度センサーのイベントハンドラ
+        function handleMotion(event) {
+            const acc = event.accelerationIncludingGravity;
+
+            if (!acc || acc.x === null || acc.y === null || acc.z === null) {
+                return;
+            }
+
+            const magnitude = calculateMagnitude(acc.x, acc.y, acc.z);
+            sampleCount++;
+
+            // 最近のデータを保持
+            const recentData = accelerationData.slice(-SAMPLING_WINDOW);
+            recentData.push(magnitude);
+
+            // 分散を計算
+            const variance = calculateVariance(recentData);
+
+            // モーション状態を判定
+            const motionState = determineMotionState(variance, recentData);
+
+            // UI更新
+            updateUI(magnitude, variance, motionState);
+
+            // 状態が変化したらログに記録
+            if (!window.lastMotionState || window.lastMotionState !== motionState.state) {
+                addLog(`状態変化: ${motionState.label}`, motionState.state);
+                window.lastMotionState = motionState.state;
+            }
+        }
+
+        // エラー表示
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        // センサー開始
+        async function startMonitoring() {
+            if (typeof DeviceMotionEvent === 'undefined') {
+                showError('このデバイスは加速度センサーをサポートしていません。');
+                return;
+            }
+
+            // iOS 13+では権限リクエストが必要
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        showError('加速度センサーへのアクセスが拒否されました。');
+                        return;
+                    }
+                } catch (error) {
+                    showError('センサー権限の取得に失敗しました: ' + error.message);
+                    return;
+                }
+            }
+
+            window.addEventListener('devicemotion', handleMotion);
+            isMonitoring = true;
+            startBtn.textContent = '停止';
+            startBtn.className = 'stop-btn';
+            errorMessage.style.display = 'none';
+            addLog('センサー監視を開始しました');
+        }
+
+        // センサー停止
+        function stopMonitoring() {
+            window.removeEventListener('devicemotion', handleMotion);
+            isMonitoring = false;
+            startBtn.textContent = 'センサーを開始';
+            startBtn.className = 'start-btn';
+            addLog('センサー監視を停止しました');
+        }
+
+        // イベントリスナー
+        startBtn.addEventListener('click', () => {
+            if (isMonitoring) {
+                stopMonitoring();
+            } else {
+                startMonitoring();
+            }
+        });
+
+        clearLogBtn.addEventListener('click', () => {
+            logContainer.innerHTML = '<div class="log-entry"><span class="log-time">--:--:--</span><span>ログがクリアされました</span></div>';
+        });
+
+        // 初期化
+        initChart();
+        addLog('アプリが準備完了しました');
+    </script>
+</body>
+</html>
