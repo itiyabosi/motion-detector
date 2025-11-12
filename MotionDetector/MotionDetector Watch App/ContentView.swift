@@ -6,8 +6,9 @@ struct ContentView: View {
     @StateObject private var connectivity = WatchConnectivityManager.shared
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 15) {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 15) {
                 // モーション状態
                 VStack(spacing: 5) {
                     Text(motionManager.motionState.label)
@@ -65,8 +66,28 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .cornerRadius(10)
                 }
+
+                Divider()
+
+                // トレーニングモード
+                NavigationLink(destination: TrainingView()) {
+                    HStack {
+                        Image(systemName: "figure.strengthtraining.traditional")
+                        Text("トレーニング")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(8)
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
             }
             .padding()
+            }
+            .navigationTitle("モーション判定")
+            .navigationBarTitleDisplayMode(.inline)
         }
         .onChange(of: motionManager.acceleration) { _ in
             sendDataToPhone()
